@@ -11,18 +11,20 @@ param(
     [string[]]$Editor,
 
     [string]$WindowsUser = $env:USERNAME,
-    [string]$WslDistro   = "sandbox--aaxis-env",
     [string]$Theme       = "Tokyo Night Light",
 
     # Color overrides — leave empty ("") to use theme defaults
-    [string]$ColorEditor       = "#c0c0c0",  # background where you write code
-    [string]$ColorSidebar      = "#c7d0d4",  # file explorer panel (left)
-    [string]$ColorActivityBar  = "#c0c0c0",  # icon bar (far left)
+    [string]$ColorEditor       = "#e8e3d8",  # background where you write code
+    [string]$ColorSidebar      = "#ddd8cc",  # file explorer panel (left)
+    [string]$ColorActivityBar  = "#ccc8bc",  # icon bar (far left)
     [string]$ColorStatusBar    = "#4a8fa3",  # bottom bar with git/errors
-    [string]$ColorTitleBar     = "#c0c0c0",  # top bar with file name
-    [string]$ColorTerminalBg   = "#c0c0c0",  # integrated terminal background
+    [string]$ColorTitleBar     = "#ddd8cc",  # top bar with file name
+    [string]$ColorTerminalBg   = "#f0ece0",  # integrated terminal background
     [string]$ColorTabActive    = "",          # active tab (current file)
-    [string]$ColorTabInactive  = ""           # inactive tabs
+    [string]$ColorTabInactive  = "",          # inactive tabs
+    [string]$ColorScrollbar        = "#00000040",  # scrollbar (idle)
+    [string]$ColorScrollbarHover   = "#00000060",  # scrollbar (hover)
+    [string]$ColorScrollbarActive  = "#00000080"   # scrollbar (drag)
 )
 
 $installCursor = $Editor -contains "Cursor"
@@ -37,6 +39,21 @@ function Log($msg)  { Write-Host "[devkit] $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "  OK  $msg" -ForegroundColor Green }
 function Skip($msg) { Write-Host " SKIP $msg" -ForegroundColor DarkGray }
 function Warn($msg) { Write-Host " WARN $msg" -ForegroundColor Yellow }
+
+function Find-EditorCLI($name) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if ($cmd) { return $name }
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\$name\bin\$name.cmd",
+        "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd",
+        "$env:ProgramFiles\$name\bin\$name.cmd",
+        "$env:ProgramFiles\Microsoft VS Code\bin\code.cmd"
+    )
+    foreach ($path in $candidates) {
+        if (Test-Path $path) { return $path }
+    }
+    return $null
+}
 
 # =============================================================================
 # Install editors via winget
@@ -73,7 +90,10 @@ if ($ColorStatusBar)   { $colorEntries += "        `"statusBar.background`": `"$
 if ($ColorTitleBar)    { $colorEntries += "        `"titleBar.activeBackground`": `"$ColorTitleBar`"" }
 if ($ColorTerminalBg)  { $colorEntries += "        `"terminal.background`": `"$ColorTerminalBg`"" }
 if ($ColorTabActive)   { $colorEntries += "        `"tab.activeBackground`": `"$ColorTabActive`"" }
-if ($ColorTabInactive) { $colorEntries += "        `"tab.inactiveBackground`": `"$ColorTabInactive`"" }
+if ($ColorTabInactive)       { $colorEntries += "        `"tab.inactiveBackground`": `"$ColorTabInactive`"" }
+if ($ColorScrollbar)        { $colorEntries += "        `"scrollbarSlider.background`": `"$ColorScrollbar`"" }
+if ($ColorScrollbarHover)   { $colorEntries += "        `"scrollbarSlider.hoverBackground`": `"$ColorScrollbarHover`"" }
+if ($ColorScrollbarActive)  { $colorEntries += "        `"scrollbarSlider.activeBackground`": `"$ColorScrollbarActive`"" }
 
 if ($colorEntries.Count -gt 0) {
     $inner = $colorEntries -join ",`n"
@@ -97,19 +117,12 @@ $vscodeSettingsPath = "C:\Users\$WindowsUser\AppData\Roaming\Code\User\settings.
 $cursorSettings = @"
 {
     "window.commandCenter": 1,
-    "files.associations": { "*.hcl": "terraform" },
     "redhat.telemetry.enabled": false,
-    "terminal.integrated.defaultProfile.windows": "$WslDistro (WSL)",
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
     "terminal.integrated.defaultProfile.linux": "bash",
     "git.suggestSmartCommit": false,
     "git.replaceTagsWhenPull": true,
     "workbench.activityBar.orientation": "vertical",
-    "claudeCodeChat.wsl.enabled": true,
-    "claudeCodeChat.wsl.distro": "$WslDistro",
-    "claudeCodeChat.wsl.nodePath": "/home/$WindowsUser/.volta/bin/node",
-    "claudeCodeChat.wsl.claudePath": "/usr/local/bin/claude",
-    "claudeCode.environmentVariables": [],
-    "claudeCode.preferredLocation": "sidebar",
     "editor.fontSize": 18,
     "editor.fontFamily": "JetBrains Mono, Cascadia Code, Consolas, monospace",
     "editor.fontLigatures": true,
@@ -132,7 +145,6 @@ $vscodeSettings = @"
 {
     "editor.minimap.enabled": false,
     "window.customTitleBarVisibility": "windowed",
-    "docker.extension.dockerEngineAvailabilityPrompt": false,
     "json.format.keepLines": true,
     "[yaml]": {
         "editor.defaultFormatter": "redhat.vscode-yaml",
@@ -140,11 +152,9 @@ $vscodeSettings = @"
     },
     "yaml.format.singleQuote": false,
     "yaml.format.proseWrap": "preserve",
-    "accessibility.voice.speechLanguage": "es-MX",
-    "files.associations": { "*.hcl": "terraform" },
     "git.suggestSmartCommit": false,
     "git.replaceTagsWhenPull": true,
-    "terminal.integrated.defaultProfile.windows": "$WslDistro (WSL)",
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
     "terminal.integrated.defaultProfile.linux": "bash",
     "terminal.integrated.scrollback": 100000,
     "terminal.integrated.gpuAcceleration": "on",
@@ -163,8 +173,6 @@ $vscodeSettings = @"
 # =============================================================================
 
 $cursorExtensions = @(
-    # AI
-    "anthropic.claude-code",
     # Git
     "eamodio.gitlens",
     "donjayamanne.git-extension-pack",
@@ -235,49 +243,50 @@ $cursorUninstall = @(
 # =============================================================================
 
 if ($installCursor) {
-    Log "Writing Cursor settings..."
-    $dir = Split-Path $cursorSettingsPath
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    Set-Content -Path $cursorSettingsPath -Value $cursorSettings -Encoding UTF8
-    Ok $cursorSettingsPath
-
-    if (Get-Command cursor -ErrorAction SilentlyContinue) {
+    $cursorCLI = Find-EditorCLI "cursor"
+    if ($cursorCLI) {
         Log "Uninstalling unwanted Cursor extensions..."
         foreach ($ext in $cursorUninstall) {
-            $out = cursor --uninstall-extension $ext 2>&1
+            $out = & $cursorCLI --uninstall-extension $ext 2>&1
             if ($out -match "successfully uninstalled") { Ok "removed $ext" }
             else { Skip "$ext (not installed)" }
         }
         Log "Installing Cursor extensions..."
         foreach ($ext in $cursorExtensions) {
-            $out = cursor --install-extension $ext 2>&1
+            $out = & $cursorCLI --install-extension $ext 2>&1
             if ($out -match "successfully installed") { Ok $ext }
             else { Skip "$ext (already installed)" }
         }
     } else {
         Warn "cursor CLI not found — restart PowerShell after install and re-run"
     }
+
+    Log "Writing Cursor settings..."
+    $dir = Split-Path $cursorSettingsPath
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    Set-Content -Path $cursorSettingsPath -Value $cursorSettings -Encoding UTF8
+    Ok $cursorSettingsPath
 }
 
 if ($installVSCode) {
-    Log "Writing VSCode settings..."
-    $dir = Split-Path $vscodeSettingsPath
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    Set-Content -Path $vscodeSettingsPath -Value $vscodeSettings -Encoding UTF8
-    Ok $vscodeSettingsPath
-
-    if (Get-Command code -ErrorAction SilentlyContinue) {
+    $codeCLI = Find-EditorCLI "code"
+    if ($codeCLI) {
         Log "Installing VSCode extensions..."
         foreach ($ext in $vscodeExtensions) {
-            $out = code --install-extension $ext 2>&1
+            $out = & $codeCLI --install-extension $ext 2>&1
             if ($out -match "successfully installed") { Ok $ext }
             else { Skip "$ext (already installed)" }
         }
     } else {
         Warn "code CLI not found — restart PowerShell after install and re-run"
     }
+
+    Log "Writing VSCode settings..."
+    $dir = Split-Path $vscodeSettingsPath
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    Set-Content -Path $vscodeSettingsPath -Value $vscodeSettings -Encoding UTF8
+    Ok $vscodeSettingsPath
 }
 
 Write-Host ""
 Write-Host "Done! Restart your editors to apply all changes." -ForegroundColor Green
-Write-Host "Note: WSL profile '$WslDistro (WSL)' requires that distro to be installed first." -ForegroundColor DarkGray
